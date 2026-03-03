@@ -1,0 +1,14 @@
+.DS_Store
+
+# Ignore build artifacts
+dist/
+build/
+*.log
+__pycache__
+
+# Ignore system-generated files
+.DS_Store
+Thumbs.db
+
+# Ignore environment and secret files
+.env
