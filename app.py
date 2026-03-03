@@ -40,8 +40,10 @@ class BambuCloudStatusApp(rumps.App):
         }
 
         self.access_token = ""
+        self._last_error_message = ""
 
         self.status_item = rumps.MenuItem("Status: -")
+        self.progress_item = rumps.MenuItem("Progress: -")
         self.online_item = rumps.MenuItem("Online: -")
         self.device_item = rumps.MenuItem("Printer: -")
         self.model_item = rumps.MenuItem("Model: -")
@@ -50,6 +52,7 @@ class BambuCloudStatusApp(rumps.App):
             self.device_item,
             self.model_item,
             self.status_item,
+            self.progress_item,
             self.online_item,
             self.updated_item,
             None,
@@ -63,7 +66,7 @@ class BambuCloudStatusApp(rumps.App):
             self._login()
             self._refresh_status()
         else:
-            self.title = "Setup required"
+            self._set_quick_title("setup")
             self.status_item.title = "Status: Configure account first"
 
         self.timer = rumps.Timer(self._refresh_status, 60)
@@ -192,6 +195,8 @@ class BambuCloudStatusApp(rumps.App):
             )
             v.raise_for_status()
             data = v.json()
+            if (data.get("loginType") or "").strip() == "verifyCode":
+                raise RuntimeError("Invalid or expired verification code")
 
         token = data.get("accessToken") or ""
         if not token:
@@ -216,6 +221,22 @@ class BambuCloudStatusApp(rumps.App):
             raise RuntimeError(f"No cloud printer named '{self.printer_name}' found")
         return devices[0]
 
+    def _set_quick_title(self, status: str, progress: int | None = None):
+        normalized = (status or "unknown").strip().lower()
+        if normalized in {"setup", "setup required"}:
+            self.title = "Setup"
+        elif normalized in {"error", "failed"}:
+            self.title = "Error"
+        elif normalized in {"running", "printing"}:
+            if isinstance(progress, int):
+                self.title = f"Printing {progress}%"
+            else:
+                self.title = "Printing"
+        elif normalized:
+            self.title = normalized.capitalize()
+        else:
+            self.title = "Unknown"
+
     def _refresh_status(self, _=None):
         if not self.access_token:
             return
@@ -223,6 +244,11 @@ class BambuCloudStatusApp(rumps.App):
             headers = dict(self.headers)
             headers["Authorization"] = f"Bearer {self.access_token}"
             resp = requests.get(f"{self.base}/v1/iot-service/api/user/bind", headers=headers, timeout=20)
+            if resp.status_code == 401:
+                # Token expired, attempt one re-login then retry.
+                self._login()
+                headers["Authorization"] = f"Bearer {self.access_token}"
+                resp = requests.get(f"{self.base}/v1/iot-service/api/user/bind", headers=headers, timeout=20)
             resp.raise_for_status()
             devices = resp.json().get("devices", [])
             device = self._pick_device(devices)
@@ -232,20 +258,34 @@ class BambuCloudStatusApp(rumps.App):
             name = device.get("name", "Unknown")
             model = device.get("dev_product_name") or device.get("dev_model_name") or "Unknown"
             status = device.get("print_status", "UNKNOWN")
+            progress = device.get("mc_percent")
+            if progress is None:
+                progress = device.get("progress")
+            try:
+                progress = int(progress) if progress is not None else None
+            except Exception:
+                progress = None
             online = bool(device.get("online", False))
             now = datetime.now().strftime("%H:%M:%S")
 
-            self.title = status.title()
+            self._set_quick_title(status, progress)
             self.device_item.title = f"Printer: {name}"
             self.model_item.title = f"Model: {model}"
             self.status_item.title = f"Status: {status}"
+            self.progress_item.title = (
+                f"Progress: {progress}%" if isinstance(progress, int) else "Progress: -"
+            )
             self.online_item.title = f"Online: {'Yes' if online else 'No'}"
             self.updated_item.title = f"Last update: {now}"
         except Exception as exc:
-            self.title = "Error"
+            self._set_quick_title("error")
             self.status_item.title = f"Status: Error"
+            self.progress_item.title = "Progress: -"
             self.updated_item.title = f"Last update: {datetime.now().strftime('%H:%M:%S')}"
-            rumps.notification("Bambu Status", "Cloud refresh failed", str(exc))
+            msg = str(exc)
+            if msg != self._last_error_message:
+                rumps.notification("Bambu Status", "Cloud refresh failed", msg)
+                self._last_error_message = msg
 
     def refresh_now(self, _):
         if not self.access_token:

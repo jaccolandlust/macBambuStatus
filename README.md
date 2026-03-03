@@ -1,5 +1,11 @@
-# macBambuStatus
-# Bambu A1 Menu Bar Status (macOS)
+# Name: macBambuStatus
+# Author: Jacco H. Landlust <jacco.landlust@gmail.com>
+# Description: 
+# Bambu Menu Bar Status for macOS, a minimilistic app that tracks the current status
+# of your Bambu Lab printer and displays that status in the status bar of your Mac.
+# 
+# This is my first atempt at generating a program using an AI model. In this case gpt-5.3-codex.
+#
 
 A small local macOS menu bar app that shows your **Bambu Lab A1** printer status in the top taskbar.
 
@@ -7,7 +13,7 @@ It uses **Bambu Cloud API only** (no MQTT).
 
 ## Features
 
-- Menu bar title shows quick status (`🖨️ Idle`, `🖨️ Printing 42%`, etc.)
+- Menu bar title shows quick status (e.g. `Idle`, `Printing 42%`, `Error`)
 - Periodic cloud refresh (every 60s)
 - Menu contains:
   - Current state
